@@ -1,0 +1,45 @@
+version: "2.1"
+
+volumes:
+  # Persists BlueZ device cache across container restarts. Required for
+  # DEVICE_MAX_AGE_DAYS age-based filtering to work correctly at startup.
+  bluetooth-data:
+
+services:
+  bluetooth:
+    build: .
+    restart: always
+    # Override the default CMD (ble_service) with a no-op for testing.
+    # Replace this with your actual application command before deploying.
+    command: sleep infinity
+    # The Bluetooth HCI management interface lives in the host network
+    # namespace. Containers in their own netns cannot reach it even with
+    # NET_ADMIN/NET_RAW capabilities; network_mode: host puts the container
+    # into the host netns so bluetoothd can open AF_BLUETOOTH sockets.
+    network_mode: host
+    volumes:
+      - bluetooth-data:/var/lib/bluetooth
+    cap_add:
+      - NET_ADMIN  # required by bluetoothd, hciconfig, and rfkill
+      - NET_RAW    # required by bluetoothd for raw HCI socket access
+    devices:
+      - "/dev/rfkill:/dev/rfkill"
+    labels:
+      # Mounts the host D-Bus socket at /host/run/dbus/system_bus_socket
+      # (supervisor v1.7.0+), used to runtime-mask and stop the host bluetoothd
+      # via the systemd D-Bus API. The runtime mask persists until host reboot;
+      # the container re-applies it on each start, so no periodic polling is needed.
+      # WARNING: exposes the full host system bus to this container.
+      # See: https://docs.balena.io/learn/develop/hardware/
+      io.balena.features.dbus: "1"
+    # environment:
+      # Uncomment and set DEVICE_CLEANUP_INTERVAL to periodically remove
+      # non-connected BLE devices from the BlueZ cache during runtime.
+      # Without this variable, cached devices are only cleared once at startup.
+      # - DEVICE_CLEANUP_INTERVAL=60
+      # Uncomment and set DEVICE_MAX_AGE_DAYS to preserve recently-seen devices
+      # during cleanup. Only devices whose BlueZ info file has not been updated
+      # in more than this many days will be removed. Requires the bluetooth-data
+      # volume so that file timestamps persist across container restarts.
+      # Without this variable, all cached devices are removed on cleanup.
+      # - DEVICE_MAX_AGE_DAYS=7
